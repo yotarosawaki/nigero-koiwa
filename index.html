@@ -37,6 +37,32 @@
   .btn{border:none;border-radius:14px;padding:11px 22px;font:inherit;font-weight:bold;font-size:17px;cursor:pointer;color:#fff;background:#2f7fd8;box-shadow:0 4px 0 rgba(0,0,0,.25)}
   .btn.gray{background:#6b7385}
   button{touch-action:manipulation}
+  /* ===== ゲームウォッチ風の本体（スマホ横向きのとき） ===== */
+  #shell{display:none;position:fixed;inset:0;background:linear-gradient(160deg,#f7a046 0%,#ee7f22 45%,#d9661a 100%);overflow:hidden}
+  body.console #shell{display:block}
+  body.console{background:#d9661a}
+  #shell::before{content:"";position:absolute;inset:6px;border-radius:26px;border:2px solid rgba(255,255,255,.28);box-shadow:inset 0 -6px 0 rgba(0,0,0,.08)}
+  #bezel{position:absolute;background:#26262c;border-radius:16px;box-shadow:inset 0 0 0 3px #141418,0 4px 0 rgba(0,0,0,.25)}
+  .side{position:absolute;top:0;bottom:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px}
+  .cross{position:relative;width:calc(var(--u) * 3);height:calc(var(--u) * 3)}
+  .cross .cb{position:absolute;width:var(--u);height:var(--u);border:none;background:#2a2a30;color:#8a8a94;font-size:calc(var(--u) * .38);display:flex;align-items:center;justify-content:center;padding:0;box-shadow:0 4px 0 #111;touch-action:none}
+  .cross .cb.on{transform:translateY(3px);box-shadow:0 1px 0 #111;color:#ffd23f}
+  .cross .up{left:var(--u);top:0;border-radius:8px 8px 0 0}
+  .cross .down{left:var(--u);top:calc(var(--u) * 2);border-radius:0 0 8px 8px}
+  .cross .left{left:0;top:var(--u);border-radius:8px 0 0 8px}
+  .cross .right{left:calc(var(--u) * 2);top:var(--u);border-radius:0 8px 8px 0}
+  .cross .mid{position:absolute;left:var(--u);top:var(--u);width:var(--u);height:var(--u);background:#2a2a30;box-shadow:0 4px 0 #111}
+  .cross .mid::after{content:"";position:absolute;inset:30%;border-radius:50%;background:#1e1e22}
+  .abs{position:relative;width:calc(var(--u) * 3.1);height:calc(var(--u) * 2.6)}
+  .ab{position:absolute;width:calc(var(--u) * 1.35);height:calc(var(--u) * 1.35);border-radius:50%;border:none;background:radial-gradient(circle at 35% 30%,#e8504a,#a81e1e 70%);color:#fff;font-weight:bold;font-size:calc(var(--u) * .5);box-shadow:0 5px 0 #5a0e0e;touch-action:none;font-family:inherit}
+  .ab.on{transform:translateY(4px);box-shadow:0 1px 0 #5a0e0e}
+  #btnA{right:0;top:0}
+  #btnB{left:0;bottom:0}
+  .lbl{font-size:calc(var(--u) * .27);font-weight:bold;color:#7a2e08;letter-spacing:.05em;text-align:center;line-height:1.4}
+  .logo{text-align:center;font-weight:bold;color:#7a2e08;letter-spacing:.15em;font-size:calc(var(--u) * .3);line-height:1.25;margin-bottom:4px;font-style:italic}
+  #result .card,#pauseP .card{min-width:470px}
+  #btns{position:absolute;right:205px;top:68px;display:flex;gap:8px}
+  #btns button{width:38px;height:38px;border-radius:50%;border:none;background:rgba(255,255,255,.85);font-size:17px;cursor:pointer;box-shadow:0 2px 6px rgba(0,0,0,.25)}
   #result .card,#pauseP .card{min-width:460px}
   #btns{position:absolute;right:12px;top:64px;display:flex;gap:8px}
   #btns button{width:40px;height:40px;border-radius:50%;border:none;background:rgba(255,255,255,.85);font-size:18px;cursor:pointer;box-shadow:0 2px 6px rgba(0,0,0,.25)}
@@ -44,6 +70,22 @@
 </style>
 </head>
 <body>
+<div id="shell">
+  <div id="bezel"></div>
+  <div class="side" id="sideL">
+    <div class="logo">NIGERO!<br>KOIWA</div>
+    <div class="cross">
+      <button class="cb up" data-d="up">▲</button><button class="cb down" data-d="down">▼</button>
+      <button class="cb left" data-d="left">◀</button><button class="cb right" data-d="right">▶</button>
+      <div class="mid"></div>
+    </div>
+    <div class="lbl">上下：列を移動<br>←ストップ　→ダッシュ</div>
+  </div>
+  <div class="side" id="sideR">
+    <div class="abs"><button class="ab" id="btnB">B</button><button class="ab" id="btnA">A</button></div>
+    <div class="lbl">A：ジャンプ／スタート<br>B：ポーズ</div>
+  </div>
+</div>
 <div id="game">
   <canvas id="cv"></canvas>
 
@@ -188,11 +230,28 @@ const SHOPS = ['八百屋', '鮮魚', '精肉', 'パン', '本', 'くすり', '�
 const cv = document.getElementById('cv'), ctx = cv.getContext('2d');
 const gameEl = document.getElementById('game');
 let Q = 1, viewScale = 1;
+let CONSOLE = false;
 function resize() {
-  viewScale = Math.min(innerWidth / W, innerHeight / H);
+  // スマホを横向きにして左右に余白があるときは、ゲームウォッチ風の本体にする
+  const touch = matchMedia('(pointer: coarse)').matches || /console=1/.test(location.search) || window.FORCE_CONSOLE;
+  CONSOLE = touch && innerWidth / innerHeight > W / H + 0.25;
+  document.body.classList.toggle('console', CONSOLE);
+  if (CONSOLE) {
+    const pad = Math.max(8, innerHeight * 0.035), minSide = Math.max(118, innerWidth * 0.15);
+    viewScale = Math.min((innerWidth - 2 * minSide) / W, (innerHeight - 2 * pad - 14) / H);
+    const gw = W * viewScale, gh = H * viewScale, gl = (innerWidth - gw) / 2, gt = (innerHeight - gh) / 2 - 6;
+    gameEl.style.left = gl + 'px'; gameEl.style.top = gt + 'px';
+    Object.assign(document.getElementById('bezel').style, { left: (gl - pad) + 'px', top: (gt - pad) + 'px', width: (gw + pad * 2) + 'px', height: (gh + pad * 2) + 'px' });
+    const side = gl - pad;
+    const u = Math.max(30, Math.min(side * 0.27, innerHeight * 0.15));
+    document.getElementById('shell').style.setProperty('--u', u + 'px');
+    for (const [id, x] of [['sideL', 0], ['sideR', innerWidth - side]]) Object.assign(document.getElementById(id).style, { left: x + 'px', width: side + 'px' });
+  } else {
+    viewScale = Math.min(innerWidth / W, innerHeight / H);
+    gameEl.style.left = ((innerWidth - W * viewScale) / 2) + 'px';
+    gameEl.style.top = ((innerHeight - H * viewScale) / 2) + 'px';
+  }
   gameEl.style.transform = `scale(${viewScale})`;
-  gameEl.style.left = ((innerWidth - W * viewScale) / 2) + 'px';
-  gameEl.style.top = ((innerHeight - H * viewScale) / 2) + 'px';
   Q = Math.min(2.5, Math.max(1, viewScale * (window.devicePixelRatio || 1)));
   cv.width = Math.round(W * Q); cv.height = Math.round(H * Q);
 }
@@ -1290,7 +1349,7 @@ function render() {
     ctx.globalAlpha = 1;
   }
   for (const f of floats) { ctx.globalAlpha = clamp(f.t, 0, 1); TXT(f.txt, clamp(f.x, 120, W - 120), f.y, 20, f.col, 'center', '#fff'); ctx.globalAlpha = 1; }
-  if (state === 'play' || state === 'intro') drawButtons();
+  if ((state === 'play' || state === 'intro') && !CONSOLE) drawButtons();
   if (state === 'runover' && stT > 0.6) {
     const k = clamp((stT - 0.6) / 0.5, 0, 1);
     ctx.globalAlpha = k; R(0, 0, W, H, 'rgba(20,10,20,.5)');
@@ -1410,6 +1469,26 @@ document.addEventListener('dblclick', e => e.preventDefault(), { passive: false 
 document.addEventListener('touchmove', e => { if (e.touches.length > 1 || e.scale && e.scale !== 1) e.preventDefault(); }, { passive: false });
 let lastTouchEnd = 0;
 document.addEventListener('touchend', e => { const now = Date.now(); if (now - lastTouchEnd < 350) e.preventDefault(); lastTouchEnd = now; }, { passive: false });
+
+
+// ===== 本体のボタン（十字・A・B） =====
+function padDown(d) {
+  if (d === 'up' || d === 'down') act(d);
+  else { held.set('pad-' + d, d === 'left' ? 'brake' : 'dash'); syncHeld(); }
+}
+function padUp(d) { if (d === 'left' || d === 'right') { held.delete('pad-' + d); syncHeld(); } }
+function pressA() { if (state === 'play') act('jump'); else if (state === 'title' || state === 'result') startGame(diff); else if (state === 'pause') resumeGame(); }
+function pressB() { if (state === 'play' || state === 'intro') pauseGame(); else if (state === 'pause') resumeGame(); }
+document.querySelectorAll('.cross .cb').forEach(b => {
+  const d = b.dataset.d;
+  b.addEventListener('pointerdown', e => { initAudio(); e.preventDefault(); b.classList.add('on'); padDown(d); try { b.setPointerCapture(e.pointerId); } catch (_) {} });
+  for (const ev of ['pointerup', 'pointercancel', 'lostpointercapture']) b.addEventListener(ev, () => { if (!b.classList.contains('on')) return; b.classList.remove('on'); padUp(d); });
+});
+for (const [id, fn] of [['btnA', pressA], ['btnB', pressB]]) {
+  const b = document.getElementById(id);
+  b.addEventListener('pointerdown', e => { initAudio(); e.preventDefault(); b.classList.add('on'); fn(); });
+  for (const ev of ['pointerup', 'pointercancel', 'pointerleave']) b.addEventListener(ev, () => b.classList.remove('on'));
+}
 
 // ===== ループ =====
 resetGame(); camX = 0;
