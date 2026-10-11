@@ -2,10 +2,10 @@
 <html lang="ja">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<meta name="viewport" content="width=device-width,initial-scale=1,minimum-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
 <title>にげろ！小岩</title>
 <style>
-  html,body{margin:0;height:100%;background:#151b2a;overflow:hidden;touch-action:none;-webkit-user-select:none;user-select:none;
+  html,body{margin:0;height:100%;background:#151b2a;overflow:hidden;touch-action:none;-webkit-user-select:none;user-select:none;-webkit-text-size-adjust:100%;-webkit-touch-callout:none;-webkit-tap-highlight-color:transparent;
     font-family:"Hiragino Maru Gothic ProN","Hiragino Sans","Yu Gothic UI","Meiryo",sans-serif;color:#1f2a48}
   #game{position:absolute;left:0;top:0;width:960px;height:540px;transform-origin:0 0;overflow:hidden;border-radius:6px;box-shadow:0 0 40px rgba(0,0,0,.5)}
   canvas{position:absolute;left:0;top:0;width:960px;height:540px;display:block;touch-action:none}
@@ -36,6 +36,7 @@
   .row{display:flex;gap:10px;justify-content:center}
   .btn{border:none;border-radius:14px;padding:11px 22px;font:inherit;font-weight:bold;font-size:17px;cursor:pointer;color:#fff;background:#2f7fd8;box-shadow:0 4px 0 rgba(0,0,0,.25)}
   .btn.gray{background:#6b7385}
+  button{touch-action:manipulation}
   #result .card,#pauseP .card{min-width:460px}
   #btns{position:absolute;right:12px;top:64px;display:flex;gap:8px}
   #btns button{width:40px;height:40px;border-radius:50%;border:none;background:rgba(255,255,255,.85);font-size:18px;cursor:pointer;box-shadow:0 2px 6px rgba(0,0,0,.25)}
@@ -290,20 +291,68 @@ const SFX = {
   caught() { [64, 60, 57, 52].forEach((n, i) => tone(mtof(n), 0.35, 'sawtooth', 0.07, i * 0.22)); },
   chime() { [76, 72, 74, 67, 67, 74, 76, 72].forEach((n, i) => { tone(mtof(n), 1.5, 'sine', 0.16, i * 0.5); tone(mtof(n + 12), 0.8, 'triangle', 0.035, i * 0.5); }); },
 };
-const MEL = [69, 72, 76, 72, 74, 72, 71, null, 69, 72, 76, 79, 77, 76, 74, null, 69, 72, 76, 72, 74, 76, 77, 79, 81, 79, 77, 76, 74, 72, 71, 68];
-const BASS = [45, 57, 45, 57, 45, 57, 45, 57, 41, 53, 41, 53, 43, 55, 43, 55, 45, 57, 45, 57, 45, 57, 45, 57, 41, 53, 41, 53, 40, 52, 40, 52];
-let bgmOn = false, bgmStep = 0, bgmNext = 0;
-function bgmStart() { if (!AC) return; bgmOn = true; bgmStep = 0; bgmNext = AC.currentTime + 0.05; }
+// ===== BGM（軽快な曲：ドラム＋ベース＋コード＋メロディ） =====
+const SONG = {
+  bpm: 168, lead: 'square',
+  chords: [[55, [0, 4, 7]], [62, [0, 4, 7]], [52, [0, 3, 7]], [60, [0, 4, 7]], [55, [0, 4, 7]], [62, [0, 4, 7]], [60, [0, 4, 7]], [62, [0, 4, 7, 10]]],
+  mel: `G5 . B5 . D6 . B5 . G5 . A5 . B5 . D6 . | A5 . F#5 . D5 . F#5 . A5 . . . F#5 . A5 . | G5 . E5 . B4 . E5 . G5 . A5 . B5 . G5 . | E5 . G5 . C6 . . . B5 . A5 . G5 . E5 .
+        D6 . . D6 B5 . G5 . D6 . . D6 B5 . G5 . | A5 . . A5 F#5 . D5 . A5 . B5 . C6 . A5 . | G5 . E5 . C5 . E5 . G5 . A5 . B5 . C6 . | D6 . . . C6 . . . B5 . A5 . F#5 . . .`,
+  bass: [0, null, 0, null, 0, null, 0, null, 0, null, 0, null, 7, null, 12, null],
+  kick: 'x.....x...x.....', snare: '....x.......x...', hat: 'x.x.x.x.x.x.x.x.', stab: '..x...x...x...x.',
+};
+const NOTE_NUM = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
+function parseMel(s) {
+  return s.replace(/\|/g, ' ').trim().split(/\s+/).map(tk => {
+    if (tk === '.') return null;
+    const m = tk.match(/^([A-G])([#b]?)(\d)$/);
+    return 12 * (+m[3] + 1) + NOTE_NUM[m[1]] + (m[2] === '#' ? 1 : m[2] === 'b' ? -1 : 0);
+  });
+}
+const SONG_MEL = parseMel(SONG.mel);
+let bgmOn = false, bgmStep = 0, bgmNext = 0, noiseBuf = null;
+function bgmStart() { if (!AC) return; bgmOn = true; bgmStep = 0; bgmNext = AC.currentTime + 0.06; }
 function bgmStop() { bgmOn = false; }
+function bnote(f, dur, type, vol, when, vib) {
+  const t = AC.currentTime + when, o = AC.createOscillator(), g = AC.createGain();
+  o.type = type; o.frequency.setValueAtTime(f, t);
+  if (vib) { const l = AC.createOscillator(), lg = AC.createGain(); l.frequency.value = 6; lg.gain.value = f * 0.006; l.connect(lg); lg.connect(o.frequency); l.start(t); l.stop(t + dur + 0.05); }
+  g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(vol, t + 0.01);
+  g.gain.exponentialRampToValueAtTime(vol * 0.6, t + dur * 0.5); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  o.connect(g); g.connect(master); o.start(t); o.stop(t + dur + 0.05);
+}
+function drum(kind, when) {
+  const t = AC.currentTime + when;
+  if (kind === 'k') {
+    const o = AC.createOscillator(), g = AC.createGain();
+    o.frequency.setValueAtTime(140, t); o.frequency.exponentialRampToValueAtTime(42, t + 0.12);
+    g.gain.setValueAtTime(0.32, t); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.16);
+    o.connect(g); g.connect(master); o.start(t); o.stop(t + 0.2);
+    return;
+  }
+  if (!noiseBuf) { const n = AC.sampleRate * 0.3; noiseBuf = AC.createBuffer(1, n, AC.sampleRate); const d = noiseBuf.getChannelData(0); for (let i = 0; i < n; i++) d[i] = Math.random() * 2 - 1; }
+  const src = AC.createBufferSource(), f = AC.createBiquadFilter(), g = AC.createGain();
+  src.buffer = noiseBuf; f.type = 'highpass';
+  const dur = kind === 's' ? 0.14 : 0.035;
+  f.frequency.value = kind === 's' ? 1400 : 7000;
+  g.gain.setValueAtTime(kind === 's' ? 0.16 : 0.05, t); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  src.connect(f); f.connect(g); g.connect(master); src.start(t); src.stop(t + dur + 0.02);
+  if (kind === 's') { const o = AC.createOscillator(), og = AC.createGain(); o.frequency.value = 190; og.gain.setValueAtTime(0.08, t); og.gain.exponentialRampToValueAtTime(0.0001, t + 0.08); o.connect(og); og.connect(master); o.start(t); o.stop(t + 0.1); }
+}
 function bgmTick(rate) {
   if (!bgmOn || !AC || muted) { if (AC) bgmNext = AC.currentTime + 0.05; return; }
-  const dur = 0.15 / rate;
-  while (bgmNext < AC.currentTime + 0.12) {
-    const w = bgmNext - AC.currentTime, i = bgmStep % 32;
-    if (MEL[i] != null) tone(mtof(MEL[i]), dur * 0.9, 'square', 0.03, w);
-    if (BASS[i] != null) tone(mtof(BASS[i]), dur * 0.95, 'triangle', 0.09, w);
-    if (i % 4 === 0) noise(0.04, 0.12, 3000);
-    bgmStep++; bgmNext += dur;
+  const st = 60 / SONG.bpm / 4 / rate;                      // 16分音符の長さ
+  while (bgmNext < AC.currentTime + 0.15) {
+    const w = Math.max(0, bgmNext - AC.currentTime), i = bgmStep % SONG_MEL.length, s = i % 16, bar = Math.floor(i / 16);
+    const [root, iv] = SONG.chords[bar % SONG.chords.length];
+    if (SONG.kick[s] === 'x') drum('k', w);
+    if (SONG.snare[s] === 'x') drum('s', w);
+    if (SONG.hat[s] === 'x') drum('h', w);
+    const b = SONG.bass[s];
+    if (b != null) bnote(mtof(root - 12 + b), st * 1.7, 'triangle', 0.16, w);
+    if (SONG.stab[s] === 'x') for (const k of iv) bnote(mtof(root + k), st * 1.1, 'square', 0.016, w);
+    const m = SONG_MEL[i];
+    if (m != null) bnote(mtof(m), st * 1.9, SONG.lead, 0.05, w, true);
+    bgmStep++; bgmNext += st;
   }
 }
 
@@ -1354,6 +1403,13 @@ document.getElementById('bQuit').onclick = goTitle;
 document.getElementById('bPause').onclick = () => state === 'pause' ? resumeGame() : pauseGame();
 document.getElementById('bMute').onclick = e => { muted = !muted; e.currentTarget.textContent = muted ? '🔇' : '🔊'; };
 document.addEventListener('visibilitychange', () => { if (document.hidden) pauseGame(); });
+// スマホでピンチやダブルタップで拡大されないようにする
+document.addEventListener('gesturestart', e => e.preventDefault(), { passive: false });
+document.addEventListener('gesturechange', e => e.preventDefault(), { passive: false });
+document.addEventListener('dblclick', e => e.preventDefault(), { passive: false });
+document.addEventListener('touchmove', e => { if (e.touches.length > 1 || e.scale && e.scale !== 1) e.preventDefault(); }, { passive: false });
+let lastTouchEnd = 0;
+document.addEventListener('touchend', e => { const now = Date.now(); if (now - lastTouchEnd < 350) e.preventDefault(); lastTouchEnd = now; }, { passive: false });
 
 // ===== ループ =====
 resetGame(); camX = 0;
